@@ -10,10 +10,12 @@ import plotly.graph_objects as go
 import math
 from IPython.display import display, HTML
 import dash
+import dash_table
 import dash_core_components as dcc
 import dash_html_components as html
 import robin_stocks as rh
 from dash.dependencies import Input, Output
+import numpy as np
 
 
 start_date = datetime(2016, 1, 1)
@@ -52,7 +54,6 @@ class BullGraph(object):
         except IOError:
             self.historical = data.DataReader("NVDA", "yahoo", self.start_date, self.end_date )
 
-        print(self.historical)        
         self.historical.reset_index(inplace=True, drop=False)
 
         # Creating graph
@@ -109,7 +110,7 @@ class BullGraph(object):
 
 # ROBIN HOOD
 # Grabs password
-def rh_login(username=""):
+def get_rh_holdings(username=""):
     """
     rh_login(username)
     ==================
@@ -135,14 +136,41 @@ def rh_login(username=""):
     portfolio  = rh.profiles.load_portfolio_profile()
     holdings   = rh.account.build_holdings()
 
-    security_list = ""
-    for security in holdings:
-        this_security = f"%s -- %s\n" % (holdings[security]["name"], holdings[security]["price"])
-        security_list = f"%s%s" % (security_list, this_security)
+    # Getting holdings data from RobinHood
+    holdings_data = {}
+    tickers = holdings.keys()
+    values          = {} 
+    shares          = {}
+    equities        = {}
+    changes         = {}
+    percent_changes = {}
+    for ticker in tickers:
+        this_stock = holdings[ticker]
+        values[ticker]          = this_stock['price']
+        shares[ticker]          = this_stock['quantity']
+        equities[ticker]        = this_stock['equity']
+        percent_changes[ticker] = this_stock['percent_change']
+        changes[ticker]         = this_stock['equity_change']
 
-    security_list = f"<b>%s</b>" % security_list
+        holdings_data[ticker] = {
+            'Ticker'         : ticker,
+            'Price'          : this_stock['price'],
+            'Shares'         : this_stock['quantity'],
+            'Percent Change' : this_stock['percent_change'],
+            'Equity'         : this_stock['equity'],
+            'Change'         : this_stock['equity_change']
+        }
 
-    return security_list
+
+
+    # Creating holdings data
+    rh_holdings = pd.DataFrame.from_dict(
+        data=holdings_data,
+        orient='index', 
+        columns=['Ticker', 'Price', 'Shares', 'Percent Change', 'Equity', 'Change']
+    )
+
+    return rh_holdings
 
 
 
@@ -155,22 +183,28 @@ start_date = datetime(2016, 1, 1)
 end_date   = datetime(2020, 7, 27)
 bg = BullGraph(start_date=start_date, end_date=end_date)
 
-security_list = rh_login("malleyconnor@knights.ucf.edu")
+rh_holdings = get_rh_holdings("malleyconnor@knights.ucf.edu")
 
 # Creating the Ticker input
 ticker_bar = dcc.Input(id="ticker_in", type="text", placeholder="NVDA", debounce=True)
+
+
+
+# Creating dash table of rh holdings
+columns = [{'name' : column, 'id' : column} for column in rh_holdings.columns]
+holdings_table = dash_table.DataTable(id="holdings_table", columns=columns, data=rh_holdings.to_dict('records'))
+
+graph_style = {'display':'inline-block', 'vertical-align' : 'top', 'margin-left' : '3vw', 'margin-top' : '3vw', 'width':'49%'}
 
 app.layout = html.Div(
     style={
         "background-color" : "#63995c"
     },
     children=[
-        dcc.Graph(id="main_graph", figure=bg.fig),
+        dcc.Graph(id="main_graph", figure=bg.fig, style=graph_style),
         html.Div(
-            children=security_list, 
-            style={
-                "color" : colors["text"]
-            }
+            children=holdings_table,
+            style={'display':'inline-block', 'vertical_align':'right', 'margin-left':'3vw', 'margin-right':'3vw', 'margin-top':'3vw', 'width':'40%'}
         ),
         ticker_bar,
         html.Div(id="ticker_out")
