@@ -193,7 +193,7 @@ class BullScreener(object):
     """
     BullScreener selects from a list of prospective stock tickers, and screens them for various indicators.
     """
-    def __init__(self, sector=None, ticker_list=None, timeframe=1):
+    def __init__(self, sector=None, ticker_list=None, timeframe=3):
         self.nyse   = pd.read_csv('tickers/nyse.csv')
 
         if (sector):
@@ -207,7 +207,7 @@ class BullScreener(object):
 
         # Gets started date based on input
         day   = date.today().day
-        month = ((date.today().month + 12 - timeframe) % 12) + 1
+        month = ((date.today().month - timeframe) % 12)
         year  = date.today().year  
         if (timeframe >= month):
             year -= 1
@@ -221,8 +221,47 @@ class BullScreener(object):
             self.historical[ticker] = data.DataReader(ticker, "yahoo", start, date.today())
             self.financials[ticker] = yf.Ticker(ticker)
 
+    def get_trendlines(self):
+        self.trendlines = {}
+        x = np.linspace(0,1, len(self.historical[self.screen_list[0]]))
+        for ticker in self.screen_list:
+            y = self.rescale_data(list(self.historical[ticker]['Close']))
+            turning_points = self.detect_turning_points(y)
+
+            print(turning_points)
+    
 
 
+    def rescale_data(self, arr=[]):
+        maxval= np.max(arr)
+        scaled_arr = np.divide(arr, maxval)
+        return scaled_arr
+
+    def detect_turning_points(self, y, period=5):
+        """
+            Returns a list of indices, containing the inflection points of y.
+        """
+        turning_points = np.zeros(len(y))
+        for i in range(math.ceil(period/2), len(turning_points)-math.ceil(period/2)):
+            turning_points[i] = self.turning_point(y[i-math.ceil(period/2) : i+math.ceil(period/2)+1 :])
+
+        return turning_points
+
+
+    def turning_point(self, sub_arr=[]):
+        avg = np.mean(sub_arr)
+
+        # Found a bullish inflection point
+        if sub_arr[0] > avg and sub_arr[-1] > avg:
+            return 1
+        # Found a bearish inflection point
+        elif sub_arr[0] < avg and sub_arr[-1] < avg:
+            return -1
+        # No inflection point
+        else:
+            return 0
+
+        
 
 app = dash.Dash(__name__)
 app.scripts.config.serve_locally = True
@@ -240,7 +279,7 @@ ticker_bar = dcc.Input(id="ticker_in", type="text", placeholder="NVDA", debounce
 
 # Initializing stock screener
 bs = BullScreener(ticker_list=['NVDA', 'MSFT', 'AAPL', 'TSLA'])
-print (bs.financials)
+bs.get_trendlines()
 
 # Creating dash table of rh holdings
 columns = [{'name' : column, 'id' : column} for column in rh_holdings.columns]
