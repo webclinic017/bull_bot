@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn
 import pandas as pd
 from pandas_datareader import data
+import datetime
 from datetime import datetime
+from datetime import date
 import plotly.graph_objects as go
 import math
 from IPython.display import display, HTML
@@ -16,15 +18,22 @@ import dash_html_components as html
 import robin_stocks as rh
 from dash.dependencies import Input, Output
 import numpy as np
+import requests
 
 
 start_date = datetime(2016, 1, 1)
 end_date   = datetime(2020, 7, 27)
-
+#"#63995c"
 colors = {
-    "text" : "#FFFFFF",
-    "background" : "#63995c"
+    "text" : "#AAAAAA",
+    "background" : "#222222",
+    "plot_background" : "#222222",
+    "plot_gridlines" : "#777777",
+    "page_background" : "#222222"
 }
+
+months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+'October', 'November', 'December']
 
 class BullGraph(object):
     # TODO: Change to use relative dates from current date
@@ -82,7 +91,15 @@ class BullGraph(object):
             "title_x" : 0.5,
             "xaxis_title" : "<b>Date</b>",
             "yaxis_title" : "<b>Price</b>",
+            "title" : f"<b>%s</b>" % self.ticker,
+            "plot_bgcolor" : colors["plot_background"],
             "paper_bgcolor": colors["background"],
+            "xaxis1" : dict(
+                gridcolor=colors["plot_gridlines"]    
+            ),
+            "yaxis1" : dict(
+                gridcolor=colors["plot_gridlines"]    
+            ),
             "font" : dict(
                 color=colors["text"],
                 size=18
@@ -109,10 +126,9 @@ class BullGraph(object):
 
 
 # ROBIN HOOD
-# Grabs password
 def get_rh_holdings(username=""):
     """
-    rh_login(username)
+    get_rh_holdings(username)
     ==================
         Description:    Logs into robinhood with the specified username and password, 
                         and grabs data of current positions
@@ -173,6 +189,40 @@ def get_rh_holdings(username=""):
     return rh_holdings
 
 
+class BullScreener(object):
+    """
+    BullScreener selects from a list of prospective stock tickers, and screens them for various indicators.
+    """
+    def __init__(self, sector=None, ticker_list=None, timeframe=1):
+        self.nyse   = pd.read_csv('tickers/nyse.csv')
+
+        if (sector):
+            self.screen_list = list(self.nyse['Symbol'][~(self.nyse['Symbol'] == '') & self.nyse['industry'] == industry])
+        else:
+            self.screen_list = list(self.nyse['Symbol'][~(self.nyse['Symbol'] == '')])
+
+        if (ticker_list):
+            self.screen_list = ticker_list
+
+
+        # Gets started date based on input
+        day   = date.today().day
+        month = ((date.today().month + 12 - timeframe) % 12) + 1
+        year  = date.today().year  
+        if (timeframe >= month):
+            year -= 1
+        date_string = f'%d %s %d' % (day, months[month-1], year)
+        start = datetime.strptime(date_string, '%d %B %Y')
+
+        # Gets yahoo finance data for selected stock tickers
+        self.historical = {}
+        self.financials = {}
+        for ticker in self.screen_list:
+            self.historical[ticker] = data.DataReader(ticker, "yahoo", start, date.today())
+            self.financials[ticker] = yf.Ticker(ticker)
+
+
+
 
 app = dash.Dash(__name__)
 app.scripts.config.serve_locally = True
@@ -188,7 +238,9 @@ rh_holdings = get_rh_holdings("malleyconnor@knights.ucf.edu")
 # Creating the Ticker input
 ticker_bar = dcc.Input(id="ticker_in", type="text", placeholder="NVDA", debounce=True)
 
-
+# Initializing stock screener
+bs = BullScreener(ticker_list=['NVDA', 'MSFT', 'AAPL', 'TSLA'])
+print (bs.financials)
 
 # Creating dash table of rh holdings
 columns = [{'name' : column, 'id' : column} for column in rh_holdings.columns]
@@ -198,13 +250,13 @@ graph_style = {'display':'inline-block', 'vertical-align' : 'top', 'margin-left'
 
 app.layout = html.Div(
     style={
-        "background-color" : "#63995c"
+        "background-color" : colors["page_background"]
     },
     children=[
         dcc.Graph(id="main_graph", figure=bg.fig, style=graph_style),
         html.Div(
             children=holdings_table,
-            style={'display':'inline-block', 'vertical_align':'right', 'margin-left':'3vw', 'margin-right':'3vw', 'margin-top':'3vw', 'width':'40%'}
+            style={'display':'inline-block', 'vertical_align':'right', 'margin-left':'3vw', 'margin-right':'3vw', 'margin-top':'10vw', 'width':'40%'}
         ),
         ticker_bar,
         html.Div(id="ticker_out")
